@@ -1,0 +1,1 @@
+This is an example how to connect to Google BigQuery using the Google APIs Client Library for JavaScript and visualizing query results with the Google Maps API.

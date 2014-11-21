@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+  <meta charset="UTF-8">
+  <title>BigQuery Charting Example</title>
+
+  <!-- JS -->
+  <!-- Google Client API -->
+  <script src="https://apis.google.com/js/client.js"></script>
+  <!--Google Maps API-->
+  <script src="https://maps.googleapis.com/maps/api/js?libraries=visualization&sensor=true_or_false"></script>
+  <!-- jQuery -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+
+  <style>
+      html, body, #map-canvas { margin: 0; padding: 0; height: 100%; font: 16px "Source Sans",helvetica,arial,sans-serif;}
+      #menu {position: absolute; background: rgba(255, 255, 255, 0.8); z-index: 1000; top: 31px; left: 93px; padding: 15px;}
+      #menu h1 {font-size: 1.5em;}
+      .spinner{width:64px;height:64px;position:absolute;top:50%;left:50%;margin-left:-32px;margin-top:-32px;text-align:center;z-index:5000;-webkit-animation:rotate 2s infinite linear;animation:rotate 2s infinite linear}.dot1,.dot2{width:60%;height:60%;display:inline-block;position:absolute;top:0;background-color:#F23A35;border-radius:100%;-webkit-animation:bounce 2s infinite ease-in-out;animation:bounce 2s infinite ease-in-out}.dot2{background-color:#4285F4;top:auto;bottom:0;-webkit-animation-delay:-1s;animation-delay:-1s}@-webkit-keyframes rotate{100%{-webkit-transform:rotate(360deg)}}@keyframes rotate{100%{transform:rotate(360deg);-webkit-transform:rotate(360deg)}}@-webkit-keyframes bounce{0%,100%{-webkit-transform:scale(0)}50%{-webkit-transform:scale(1)}}@keyframes bounce{0%,100%{transform:scale(0);-webkit-transform:scale(0)}50%{transform:scale(1);-webkit-transform:scale(1)}}
+  </style>
+
+  <script>
+      // User Submitted Variables
+      /**
+       * Create a new project at https://console.developers.google.com
+       * and store your PROJECT ID here.
+       */
+      var project_id = 'REPLACE WITH YOUR PROJECT ID';
+      /**
+       * Create a new CLIENT ID at https://console.developers.google.com
+       * by going to your project dashboard and going to APIs & auth -> Credentials.
+       * Click 'Create new Client ID', select for Web Application & put copy the location
+       * where your Website is running (e.g.http://localhost:8080/)  into JAVASCRIPT ORIGINS.
+       */
+      var client_id = 'REPLACE WITH YOUR CLIENT ID';
+
+      var config = {
+        'client_id': client_id,
+        'scope': 'https://www.googleapis.com/auth/bigquery'
+      };
+
+      /**
+       * For a complete list of BigQuery endpoints please refer to
+       * https://cloud.google.com/bigquery/docs/reference/v2/
+       */
+
+      /**
+       * The queries we want to run on the vehicle_tracker table.
+       * Remember every Table you want to query has to be shared with you.
+       */
+      // Select all unique vehicles and the count of rows per vehicle.
+      var groupById = "SELECT thing, COUNT(*) FROM [dw-open-001:demo.vehicle_tracker] GROUP BY thing;";
+
+      /**
+       * For more information on the Google APIs Client Library for JavaScript
+       * see https://developers.google.com/api-client-library/javascript/start/start-js
+       */
+      function auth() {
+          gapi.auth.authorize(config, function() {
+              gapi.client.load('bigquery', 'v2');
+              $('#client_initiated').html('BigQuery client initiated');
+              $('#auth_button').fadeOut();
+              $('#projects_button').fadeIn();
+              $('#dataset_button').fadeIn();
+              $('#query_button').fadeIn();
+          });
+      }
+
+      /**
+       * This corresponds to https://cloud.google.com/bigquery/docs/reference/v2/projects/list
+       */
+      function showProjects() {
+        var request = gapi.client.bigquery.projects.list();
+        request.execute(function(response) {     
+            $('#result_box').html(JSON.stringify(response, null));
+        });
+      }
+
+      /**
+       * This corresponds to https://cloud.google.com/bigquery/docs/reference/v2/datasets/list
+       */
+      function showDatasets() {
+        var request = gapi.client.bigquery.datasets.list({
+          'projectId': project_id
+        });
+        request.execute(function(response) {     
+            $('#result_box').html(JSON.stringify(response.result.datasets, null));
+        });
+      }
+
+      /**
+       * This corresponds to https://cloud.google.com/bigquery/docs/reference/v2/jobs/query
+       */
+      function runQuery(sql, callback) {
+       $('.spinner').fadeIn();
+       var request = gapi.client.bigquery.jobs.query({
+          'projectId': project_id,
+          'timeoutMs': '30000',
+          'query': sql
+        });
+        request.execute(function(response) {     
+            console.log(response);
+            callback(response.result.rows);
+            $('.spinner').fadeOut();
+        });
+      }
+
+      function populateVehicleList() {
+          runQuery(groupById, function(res){
+              res.forEach(function(row){
+                  $('#vehicle_list').append(
+                          $('<option></option>').attr({value:row.f[0].v}).html(row.f[0].v+' : '+row.f[1].v)
+                  );
+              });
+              $('#vehicle_list').fadeIn();
+              $('#projects_button').fadeOut();
+              $('#dataset_button').fadeOut();
+              $('#query_button').fadeOut();
+          })
+      }
+
+      function getLocations(id) {
+          console.log(id);
+          var sql = "SELECT loc_lat, loc_lng FROM [dw-open-001:demo.vehicle_tracker] WHERE thing = '"+id+"';";
+          runQuery(sql, function(res){
+              heatmapData = [];
+              res.forEach(function(row){
+                  heatmapData.push(new google.maps.LatLng(row.f[0].v, row.f[1].v))
+              });
+              // Create the Heatmap
+              createHeatmap();
+          });
+      }
+
+      function createHeatmap(){
+          // Destroy old heatmap
+          if (!!heatmap) {
+              heatmap.setMap(null);
+          }
+          heatmap = new google.maps.visualization.HeatmapLayer({
+              data: heatmapData,
+              maxIntensity: 20
+          });
+          heatmap.setMap(map);
+      }
+
+      //Google Map related variables
+      var heatmap = null;
+      var heatmapData = [];
+      var map;
+      var world = new google.maps.LatLng(50.697158836230045,-10.874581329345675);
+
+      //run init function when window loaded
+      google.maps.event.addDomListener(window, 'load', initialize);
+
+      function initialize() {
+          map = new google.maps.Map(document.getElementById('map-canvas'), {
+              center: world,
+              zoom: 3,
+              mapTypeId: google.maps.MapTypeId.ROAD
+          });
+      }
+  </script>
+  </head>
+
+  <body>
+    <div class="spinner" style="display:none;">
+      <div class="dot1"></div>
+      <div class="dot2"></div>
+    </div>
+    <div id="map-canvas"></div>
+    <div id="menu">
+        <h1>BigQuery + JavaScript Example</h1>
+        <button id="auth_button" onclick="auth();">Authorize</button>
+        <div id="client_initiated"></div>
+        <button id="projects_button" style="display:none;" onclick="showProjects();">Show Projects</button>
+        <button id="dataset_button" style="display:none;" onclick="showDatasets();">Show datasets</button>
+        <button id="query_button" style="display:none;" onclick="populateVehicleList();">Get vehicles</button>
+        <div id="result_box"></div>
+        <select id="vehicle_list"  style="display:none;" onchange="getLocations(this.value);">
+            <option disabled>Vehicle ID : locations</option>
+        </select>
+    </div>
+  </body>
+</html>
