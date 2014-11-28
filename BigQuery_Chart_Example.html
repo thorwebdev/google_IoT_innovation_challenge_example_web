@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>BigQuery Charting Example</title>
+
+    <!-- JS -->
+    <!-- Google Client API -->
+    <script src="https://apis.google.com/js/client.js"></script>
+    <!--Google Charts API-->
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <!-- jQuery -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; font: 16px "Source Sans",helvetica,arial,sans-serif;}
+        #menu {padding: 15px;}
+        #menu h1 {font-size: 1.5em;}
+        .spinner{width:64px;height:64px;position:absolute;top:50%;left:50%;margin-left:-32px;margin-top:-32px;text-align:center;z-index:5000;-webkit-animation:rotate 2s infinite linear;animation:rotate 2s infinite linear}.dot1,.dot2{width:60%;height:60%;display:inline-block;position:absolute;top:0;background-color:#F23A35;border-radius:100%;-webkit-animation:bounce 2s infinite ease-in-out;animation:bounce 2s infinite ease-in-out}.dot2{background-color:#4285F4;top:auto;bottom:0;-webkit-animation-delay:-1s;animation-delay:-1s}@-webkit-keyframes rotate{100%{-webkit-transform:rotate(360deg)}}@keyframes rotate{100%{transform:rotate(360deg);-webkit-transform:rotate(360deg)}}@-webkit-keyframes bounce{0%,100%{-webkit-transform:scale(0)}50%{-webkit-transform:scale(1)}}@keyframes bounce{0%,100%{transform:scale(0);-webkit-transform:scale(0)}50%{transform:scale(1);-webkit-transform:scale(1)}}
+    </style>
+
+    <script>
+        // User Submitted Variables
+        /**
+         * Create a new project at https://console.developers.google.com
+         * and store your PROJECT ID here.
+         */
+        var project_id = 'REPLACE WITH YOUR PROJECT ID';
+        /**
+         * Create a new CLIENT ID at https://console.developers.google.com
+         * by going to your project dashboard and going to APIs & auth -> Credentials.
+         * Click 'Create new Client ID', select for Web Application & put copy the location
+         * where your Website is running (e.g.http://localhost:8080/)  into JAVASCRIPT ORIGINS.
+         */
+        var client_id = 'REPLACE WITH YOUR CLIENT ID';
+
+        var config = {
+            'client_id': client_id,
+            'scope': 'https://www.googleapis.com/auth/bigquery'
+        };
+
+        /**
+         * For a complete list of BigQuery endpoints please refer to
+         * https://cloud.google.com/bigquery/docs/reference/v2/
+         */
+
+        /**
+         * The query we want to run on the weather table.
+         * Remember every Table you want to query has to be shared with you.
+         */
+        // Calculate averages for temperature, rain rate and wind speed grouped by day.
+        var groupByDay = "SELECT DATE( ts ) AS ForDate, SUM( prop_outside_temp )/NumPosts AS avg_outside_temp, SUM( prop_rain_rate )/NumPosts AS avg_rain_rate, SUM( prop_wind_speed )/NumPosts AS avg_wind_speed, COUNT(*) AS NumPosts FROM [dw-open-001:demo.weather] WHERE DATE( ts ) < '2014-09-19' GROUP BY ForDate ORDER BY ForDate;";
+
+        /**
+         * For more information on the Google APIs Client Library for JavaScript
+         * see https://developers.google.com/api-client-library/javascript/start/start-js
+         */
+        function auth() {
+            gapi.auth.authorize(config, function() {
+                gapi.client.load('bigquery', 'v2');
+                $('#client_initiated').html('BigQuery client initiated');
+                $('#auth_button').fadeOut();
+                $('#projects_button').fadeIn();
+                $('#dataset_button').fadeIn();
+                $('#query_button').fadeIn();
+            });
+        }
+
+        /**
+         * This corresponds to https://cloud.google.com/bigquery/docs/reference/v2/projects/list
+         */
+        function showProjects() {
+            var request = gapi.client.bigquery.projects.list();
+            request.execute(function(response) {
+                $('#result_box').html(JSON.stringify(response, null));
+            });
+        }
+
+        /**
+         * This corresponds to https://cloud.google.com/bigquery/docs/reference/v2/datasets/list
+         */
+        function showDatasets() {
+            var request = gapi.client.bigquery.datasets.list({
+                'projectId': project_id
+            });
+            request.execute(function(response) {
+                $('#result_box').html(JSON.stringify(response.result.datasets, null));
+            });
+        }
+
+        /**
+         * This corresponds to https://cloud.google.com/bigquery/docs/reference/v2/jobs/query
+         */
+        function runQuery(sql, callback) {
+            $('.spinner').fadeIn();
+            var request = gapi.client.bigquery.jobs.query({
+                'projectId': project_id,
+                'timeoutMs': '30000',
+                'query': sql
+            });
+            request.execute(function(response) {
+                console.log(response);
+                callback(response.result.rows);
+                $('.spinner').fadeOut();
+            });
+        }
+
+        //Google Charts
+        //Load Google Charts API
+        google.load("visualization", "1", {packages:["corechart"]});
+        google.setOnLoadCallback(auth);
+
+        function createCharts() {
+            //Get data from BigQuery.
+            runQuery(groupByDay, function (rows) {
+                var tempData = [['Day','avg Temp']];
+                var rainData = [['Day','avg Rain Rate']];
+                var windData = [['Day','avg Wind Speed']];
+                rows.forEach(function(row){
+                    tempData.push([row.f[0].v, parseInt(row.f[1].v)]);
+                    rainData.push([row.f[0].v, parseInt(row.f[2].v)]);
+                    windData.push([row.f[0].v, parseInt(row.f[3].v)]);
+                });
+
+                var tempOptions = {
+                    title: 'Average outside temperature per day'
+                };
+                var rainOptions = {
+                    title: 'Average rain rate per day'
+                };
+                var windOptions = {
+                    title: 'Average wind speed per day'
+                };
+                //Temperature.
+                tempData = google.visualization.arrayToDataTable(tempData);
+                var tempChart = new google.visualization.LineChart(document.getElementById('temp_chart'));
+                tempChart.draw(tempData, tempOptions);
+                //Rain rate.
+                rainData = google.visualization.arrayToDataTable(rainData);
+                var rainChart = new google.visualization.LineChart(document.getElementById('rain_chart'));
+                rainChart.draw(rainData, rainOptions);
+                //Wind speed.
+                windData = google.visualization.arrayToDataTable(windData);
+                var windChart = new google.visualization.LineChart(document.getElementById('wind_chart'));
+                windChart.draw(windData, windOptions);
+            });
+        }
+
+    </script>
+</head>
+
+<body>
+<div class="spinner" style="display:none;">
+    <div class="dot1"></div>
+    <div class="dot2"></div>
+</div>
+<div id="menu">
+    <h1>BigQuery + JavaScript + Google Charts Example</h1>
+    <button id="auth_button" onclick="auth();">Authorize</button>
+    <div id="client_initiated"></div>
+    <button id="projects_button" style="display:none;" onclick="showProjects();">Show Projects</button>
+    <button id="dataset_button" style="display:none;" onclick="showDatasets();">Show datasets</button>
+    <button id="query_button" style="display:none;" onclick="createCharts();">Create Charts</button>
+    <div id="result_box"></div>
+</div>
+<div id="temp_chart" style="width: 100%; height: 500px;"></div>
+<div id="rain_chart" style="width: 100%; height: 500px;"></div>
+<div id="wind_chart" style="width: 100%; height: 500px;"></div>
+</body>
+</html>
